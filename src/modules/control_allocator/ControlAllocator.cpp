@@ -563,6 +563,18 @@ ControlAllocator::update_effectiveness_matrix_if_needed(EffectivenessUpdateReaso
 				++actuator_idx_matrix[selected_matrix];
 				++actuator_idx;
 			}
+
+			// When fewer motors remain than the number of independently controlled axes
+			// (roll/pitch/yaw/thrust), yaw can no longer be achieved at hover. Zero the
+			// yaw row so the allocator focuses authority on roll, pitch, and thrust
+			// instead of fighting unachievable yaw and corrupting the roll/pitch solution.
+			const int num_active = _num_actuators[0] - math::countSetBits((uint32_t)_handled_motor_failure_bitmask);
+
+			if (num_active < 4) {
+				for (int i = 0; i < _num_control_allocation; ++i) {
+					config.effectiveness_matrices[i].row(ControlAllocation::ControlAxis::YAW) = 0.f;
+				}
+			}
 		}
 
 		for (int i = 0; i < _num_control_allocation; ++i) {
