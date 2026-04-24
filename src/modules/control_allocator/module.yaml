@@ -619,6 +619,8 @@ parameters:
             values:
                 0: Ignore
                 1: Remove first failed motor from effectiveness
+                2: Stop opposite motor and remove both (2-motor safe descent)
+                3: Trim opposite motor at low fixed output (orbital tilt)
             default: 0
 
         CA_ICE_PERIOD:

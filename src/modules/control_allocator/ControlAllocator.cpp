@@ -577,6 +577,15 @@ ControlAllocator::update_effectiveness_matrix_if_needed(EffectivenessUpdateReaso
 			}
 		}
 
+		// Trim motor: zero its roll/pitch effectiveness so the allocator uses it purely for thrust.
+		// Its physical roll moment becomes an unmodeled constant tilt (the desired orbital tilt).
+		// ROTOR2/ROTOR3 are then free to handle attitude without fighting the trim motor's roll contribution.
+		if (_trim_motor_idx >= 0) {
+			config.effectiveness_matrices[0](ControlAllocation::ControlAxis::ROLL, _trim_motor_idx) = 0.0f;
+			config.effectiveness_matrices[0](ControlAllocation::ControlAxis::PITCH, _trim_motor_idx) = 0.0f;
+			maximum[0](_trim_motor_idx) = TRIM_MOTOR_MAX;
+		}
+
 		for (int i = 0; i < _num_control_allocation; ++i) {
 			_control_allocation[i]->setActuatorMin(minimum[i]);
 			_control_allocation[i]->setActuatorMax(maximum[i]);
@@ -814,6 +823,60 @@ ControlAllocator::check_for_motor_failures()
 					}
 					break;
 
+				case FailureMode::TRIM_OPPOSITE_MOTOR: {
+						const int num_motors_failed = math::countSetBits(effective_failure_mask);
+
+						if (_handled_motor_failure_bitmask == 0 && num_motors_failed == 1) {
+							int failed_idx = 0;
+
+							for (int i = 0; i < 16; i++) {
+								if (effective_failure_mask & (1u << i)) { failed_idx = i; break; }
+							}
+
+							const int opposite_idx = failed_idx ^ 1;
+							// Only remove the failed motor from allocation; keep opposite motor in
+							// effectiveness matrix but cap its max output so the allocator uses it
+							// sparingly, creating an asymmetric tilt for orbital motion.
+							_handled_motor_failure_bitmask = effective_failure_mask;
+							_trim_motor_idx = opposite_idx;
+							PX4_WARN("Motor %d failed: capping opposite motor %d at %.2f for orbital tilt (0x%x)",
+								 failed_idx, opposite_idx, (double)TRIM_MOTOR_MAX, _handled_motor_failure_bitmask);
+
+							for (int i = 0; i < _num_control_allocation; ++i) {
+								_control_allocation[i]->setHadActuatorFailure(true);
+							}
+
+							update_effectiveness_matrix_if_needed(EffectivenessUpdateReason::MOTOR_ACTIVATION_UPDATE);
+						}
+					}
+					break;
+
+				case FailureMode::STOP_OPPOSITE_MOTOR: {
+						const int num_motors_failed = math::countSetBits(effective_failure_mask);
+
+						if (_handled_motor_failure_bitmask == 0 && num_motors_failed == 1) {
+							// Find the single failed motor index
+							int failed_idx = 0;
+
+							for (int i = 0; i < 16; i++) {
+								if (effective_failure_mask & (1u << i)) { failed_idx = i; break; }
+							}
+
+							// Diagonal opposite in standard X-frame quad: 0↔1, 2↔3
+							const int opposite_idx = failed_idx ^ 1;
+							_handled_motor_failure_bitmask = effective_failure_mask | (1u << opposite_idx);
+							PX4_WARN("Motor %d failed: stopping opposite motor %d for 2-motor descent (0x%x)",
+								 failed_idx, opposite_idx, _handled_motor_failure_bitmask);
+
+							for (int i = 0; i < _num_control_allocation; ++i) {
+								_control_allocation[i]->setHadActuatorFailure(true);
+							}
+
+							update_effectiveness_matrix_if_needed(EffectivenessUpdateReason::MOTOR_ACTIVATION_UPDATE);
+						}
+					}
+					break;
+
 				default:
 					break;
 				}
@@ -824,6 +887,7 @@ ControlAllocator::check_for_motor_failures()
 			// Clear bitmask completely
 			PX4_INFO("Restoring all motors");
 			_handled_motor_failure_bitmask = 0;
+			_trim_motor_idx = -1;
 
 			for (int i = 0; i < _num_control_allocation; ++i) {
 				_control_allocation[i]->setHadActuatorFailure(false);
