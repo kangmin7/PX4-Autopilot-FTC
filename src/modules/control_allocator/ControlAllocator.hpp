@@ -79,6 +79,7 @@
 #include <uORB/topics/vehicle_thrust_setpoint.h>
 #include <uORB/topics/vehicle_status.h>
 #include <uORB/topics/failure_detector_status.h>
+#include <uORB/topics/vehicle_command.h>
 
 class ControlAllocator : public ModuleBase, public ModuleParams, public px4::ScheduledWorkItem
 {
@@ -204,6 +205,7 @@ private:
 	// Outputs
 	uORB::PublicationMulti<control_allocator_status_s> _control_allocator_status_pub[2] {ORB_ID(control_allocator_status), ORB_ID(control_allocator_status)};
 
+	uORB::Publication<vehicle_command_s>	_vehicle_command_pub{ORB_ID(vehicle_command)};
 	uORB::Publication<actuator_motors_s>	_actuator_motors_pub{ORB_ID(actuator_motors)};
 	uORB::Publication<actuator_servos_s>	_actuator_servos_pub{ORB_ID(actuator_servos)};
 	uORB::Publication<actuator_servos_trim_s>	_actuator_servos_trim_pub{ORB_ID(actuator_servos_trim)};
@@ -222,8 +224,10 @@ private:
 	// For example, the system might report two motor failures, but only the first one is handled by CA
 	uint16_t _handled_motor_failure_bitmask{0};
 	uint16_t _motor_stop_mask{0};
-	int _trim_motor_idx{-1};           ///< motor index kept at fixed low output for orbital tilt (-1 = inactive)
-	static constexpr float TRIM_MOTOR_MAX{0.6f};   ///< max output cap for trim motor (keeps it weaker than main pair)
+	int _trim_motor_idx{-1};
+	hrt_abstime _trim_ramp_start_time{0};
+	static constexpr float TRIM_MOTOR_MAX{0.15f};
+	static constexpr float TRIM_RAMP_DURATION{10.0f};  ///< seconds to ramp from 0 to TRIM_MOTOR_MAX
 
 	perf_counter_t	_loop_perf;			/**< loop duration performance counter */
 

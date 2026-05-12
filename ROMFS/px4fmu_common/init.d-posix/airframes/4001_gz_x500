@@ -53,9 +53,21 @@ param set-default NAV_DLL_ACT 0
 
 param set-default MIS_TAKEOFF_ALT 8.0
 
-param set-default MPC_XY_VEL_I_ACC 0.02
-param set-default MPC_Z_VEL_P_ACC 8.0
-param set-default MPC_Z_VEL_I_ACC 4.0
+param set-default MPC_XY_VEL_I_ACC 0.0
+param set-default MPC_XY_P 0.0
+param set-default MC_YAW_WEIGHT 0.0
+param set-default MC_AIRMODE 0
+param set-default MC_ROLLRATE_P 0.05
+param set-default MC_PITCHRATE_P 0.05
+param set-default MPC_THR_MAX 0.5
+param set-default MPC_Z_VEL_I_ACC 0.0
+param set-default MPC_LAND_SPEED 2.0
+param set-default MPC_Z_VEL_MAX_DN 3.0
+param set-default MPC_Z_VEL_P_ACC 4.0
+param set-default MPC_Z_VEL_I_ACC 0.5
+
+param set-default FD_FAIL_R 0
+param set-default FD_FAIL_P 0
 
 param set-default SYS_FAILURE_EN 1
 param set-default CA_FAILURE_MODE 2

@@ -440,6 +440,19 @@ ControlAllocator::Run()
 			if (i == 0) {
 				// The motors are always in allocation 0
 				handle_stopped_motors(now);
+
+				// Ramp trim motor from fully stopped (NaN) to TRIM_MOTOR_MAX for orbital tilt.
+				// Only override the NaN once the ramp reaches a threshold — below that the motor
+				// stays completely off (identical to mode 2) to avoid idle-speed thrust from ESC_MIN.
+				if (_trim_motor_idx >= 0 && _trim_ramp_start_time > 0) {
+					const float elapsed = (float)(now - _trim_ramp_start_time) * 1e-6f;
+					const float trim_output = math::min(elapsed / TRIM_RAMP_DURATION, 1.0f) * TRIM_MOTOR_MAX;
+
+					if (trim_output > 0.05f) {
+						_control_allocation[0]->_actuator_sp(_trim_motor_idx) = trim_output;
+					}
+					// else: NaN from handle_stopped_motors keeps motor fully stopped
+				}
 			}
 
 			if (_has_slew_rate) {
@@ -577,14 +590,6 @@ ControlAllocator::update_effectiveness_matrix_if_needed(EffectivenessUpdateReaso
 			}
 		}
 
-		// Trim motor: zero its roll/pitch effectiveness so the allocator uses it purely for thrust.
-		// Its physical roll moment becomes an unmodeled constant tilt (the desired orbital tilt).
-		// ROTOR2/ROTOR3 are then free to handle attitude without fighting the trim motor's roll contribution.
-		if (_trim_motor_idx >= 0) {
-			config.effectiveness_matrices[0](ControlAllocation::ControlAxis::ROLL, _trim_motor_idx) = 0.0f;
-			config.effectiveness_matrices[0](ControlAllocation::ControlAxis::PITCH, _trim_motor_idx) = 0.0f;
-			maximum[0](_trim_motor_idx) = TRIM_MOTOR_MAX;
-		}
 
 		for (int i = 0; i < _num_control_allocation; ++i) {
 			_control_allocation[i]->setActuatorMin(minimum[i]);
@@ -834,13 +839,14 @@ ControlAllocator::check_for_motor_failures()
 							}
 
 							const int opposite_idx = failed_idx ^ 1;
-							// Only remove the failed motor from allocation; keep opposite motor in
-							// effectiveness matrix but cap its max output so the allocator uses it
-							// sparingly, creating an asymmetric tilt for orbital motion.
-							_handled_motor_failure_bitmask = effective_failure_mask;
+							// Both motors removed from allocation (same as mode 2 initially).
+							// Opposite motor is then ramped from 0 to TRIM_MOTOR_MAX post-allocation
+							// to gradually introduce orbital tilt without destabilising the 2-motor hover.
+							_handled_motor_failure_bitmask = effective_failure_mask | (1u << opposite_idx);
 							_trim_motor_idx = opposite_idx;
-							PX4_WARN("Motor %d failed: capping opposite motor %d at %.2f for orbital tilt (0x%x)",
-								 failed_idx, opposite_idx, (double)TRIM_MOTOR_MAX, _handled_motor_failure_bitmask);
+							_trim_ramp_start_time = hrt_absolute_time();
+							PX4_WARN("Motor %d failed: ramping trim motor %d to %.2f over %.1fs",
+								 failed_idx, opposite_idx, (double)TRIM_MOTOR_MAX, (double)TRIM_RAMP_DURATION);
 
 							for (int i = 0; i < _num_control_allocation; ++i) {
 								_control_allocation[i]->setHadActuatorFailure(true);
@@ -855,18 +861,29 @@ ControlAllocator::check_for_motor_failures()
 						const int num_motors_failed = math::countSetBits(effective_failure_mask);
 
 						if (_handled_motor_failure_bitmask == 0 && num_motors_failed == 1) {
-							// Find the single failed motor index
 							int failed_idx = 0;
 
 							for (int i = 0; i < 16; i++) {
 								if (effective_failure_mask & (1u << i)) { failed_idx = i; break; }
 							}
 
-							// Diagonal opposite in standard X-frame quad: 0↔1, 2↔3
-							const int opposite_idx = failed_idx ^ 1;
-							_handled_motor_failure_bitmask = effective_failure_mask | (1u << opposite_idx);
-							PX4_WARN("Motor %d failed: stopping opposite motor %d for 2-motor descent (0x%x)",
-								 failed_idx, opposite_idx, _handled_motor_failure_bitmask);
+							if (_num_actuators[0] == 4) {
+								// Quadrotor: stop diagonal opposite (0↔1, 2↔3) for symmetric 2-motor descent
+								const int opposite_idx = failed_idx ^ 1;
+								_handled_motor_failure_bitmask = effective_failure_mask | (1u << opposite_idx);
+								PX4_WARN("Motor %d failed: stopping opposite motor %d for 2-motor descent (0x%x)",
+									 failed_idx, opposite_idx, _handled_motor_failure_bitmask);
+
+								vehicle_command_s vcmd{};
+								vcmd.timestamp = hrt_absolute_time();
+								vcmd.command = vehicle_command_s::VEHICLE_CMD_NAV_LAND;
+								_vehicle_command_pub.publish(vcmd);
+
+							} else {
+								// Non-quadrotor: plain reallocation, same as REMOVE_FIRST_FAILING_MOTOR
+								_handled_motor_failure_bitmask = effective_failure_mask;
+								PX4_WARN("Removing motor from allocation (0x%x)", _handled_motor_failure_bitmask);
+							}
 
 							for (int i = 0; i < _num_control_allocation; ++i) {
 								_control_allocation[i]->setHadActuatorFailure(true);
@@ -888,6 +905,7 @@ ControlAllocator::check_for_motor_failures()
 			PX4_INFO("Restoring all motors");
 			_handled_motor_failure_bitmask = 0;
 			_trim_motor_idx = -1;
+			_trim_ramp_start_time = 0;
 
 			for (int i = 0; i < _num_control_allocation; ++i) {
 				_control_allocation[i]->setHadActuatorFailure(false);
