@@ -151,6 +151,8 @@ private:
 
 	float get_ice_shedding_output(hrt_abstime now);
 
+	void set_gz_ec_min(int32_t value);
+
 	AllocationMethod _allocation_method_id{AllocationMethod::NONE};
 	ControlAllocation *_control_allocation[ActuatorEffectiveness::MAX_NUM_MATRICES] {}; 	///< class for control allocation calculations
 	int _num_control_allocation{0};

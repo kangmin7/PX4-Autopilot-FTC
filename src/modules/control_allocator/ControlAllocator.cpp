@@ -707,6 +707,20 @@ ControlAllocator::publish_control_allocator_status(int matrix_index)
 	_control_allocator_status_pub[matrix_index].publish(control_allocator_status);
 }
 
+void
+ControlAllocator::set_gz_ec_min(int32_t value)
+{
+	for (int i = 1; i <= _num_actuators[0]; ++i) {
+		char buf[20];
+		snprintf(buf, sizeof(buf), "SIM_GZ_EC_MIN%d", i);
+		param_t handle = param_find(buf);
+
+		if (handle != PARAM_INVALID) {
+			param_set(handle, &value);
+		}
+	}
+}
+
 float
 ControlAllocator::get_ice_shedding_output(hrt_abstime now)
 {
@@ -818,6 +832,7 @@ ControlAllocator::check_for_motor_failures()
 						if (_handled_motor_failure_bitmask == 0 && num_motors_failed == 1) {
 							_handled_motor_failure_bitmask = effective_failure_mask;
 							PX4_WARN("Removing motor from allocation (0x%x)", _handled_motor_failure_bitmask);
+							set_gz_ec_min(0);
 
 							for (int i = 0; i < _num_control_allocation; ++i) {
 								_control_allocation[i]->setHadActuatorFailure(true);
@@ -883,6 +898,7 @@ ControlAllocator::check_for_motor_failures()
 								// Non-quadrotor: plain reallocation, same as REMOVE_FIRST_FAILING_MOTOR
 								_handled_motor_failure_bitmask = effective_failure_mask;
 								PX4_WARN("Removing motor from allocation (0x%x)", _handled_motor_failure_bitmask);
+								set_gz_ec_min(0);
 							}
 
 							for (int i = 0; i < _num_control_allocation; ++i) {
@@ -906,6 +922,7 @@ ControlAllocator::check_for_motor_failures()
 			_handled_motor_failure_bitmask = 0;
 			_trim_motor_idx = -1;
 			_trim_ramp_start_time = 0;
+			set_gz_ec_min(150);
 
 			for (int i = 0; i < _num_control_allocation; ++i) {
 				_control_allocation[i]->setHadActuatorFailure(false);
