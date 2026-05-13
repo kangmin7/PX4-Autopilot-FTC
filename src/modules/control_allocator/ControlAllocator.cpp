@@ -889,6 +889,12 @@ ControlAllocator::check_for_motor_failures()
 								PX4_WARN("Motor %d failed: stopping opposite motor %d for 2-motor descent (0x%x)",
 									 failed_idx, opposite_idx, _handled_motor_failure_bitmask);
 
+								{
+									float val = 1.5f;
+									param_t h = param_find("MPC_LAND_SPEED");
+									if (h != PARAM_INVALID) { param_set(h, &val); }
+								}
+
 								vehicle_command_s vcmd{};
 								vcmd.timestamp = hrt_absolute_time();
 								vcmd.command = vehicle_command_s::VEHICLE_CMD_NAV_LAND;
@@ -923,6 +929,12 @@ ControlAllocator::check_for_motor_failures()
 			_trim_motor_idx = -1;
 			_trim_ramp_start_time = 0;
 			set_gz_ec_min(150);
+
+			{
+				float val = 0.7f;
+				param_t h = param_find("MPC_LAND_SPEED");
+				if (h != PARAM_INVALID) { param_set(h, &val); }
+			}
 
 			for (int i = 0; i < _num_control_allocation; ++i) {
 				_control_allocation[i]->setHadActuatorFailure(false);

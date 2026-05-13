@@ -229,7 +229,7 @@ private:
 	int _trim_motor_idx{-1};
 	hrt_abstime _trim_ramp_start_time{0};
 	static constexpr float TRIM_MOTOR_MAX{0.15f};
-	static constexpr float TRIM_RAMP_DURATION{10.0f};  ///< seconds to ramp from 0 to TRIM_MOTOR_MAX
+	static constexpr float TRIM_RAMP_DURATION{2.0f};  ///< seconds to ramp from 0 to TRIM_MOTOR_MAX
 
 	perf_counter_t	_loop_perf;			/**< loop duration performance counter */
 
