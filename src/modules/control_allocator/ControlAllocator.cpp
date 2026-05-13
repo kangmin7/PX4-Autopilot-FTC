@@ -901,9 +901,15 @@ ControlAllocator::check_for_motor_failures()
 								_vehicle_command_pub.publish(vcmd);
 
 							} else {
-								// Non-quadrotor: plain reallocation, same as REMOVE_FIRST_FAILING_MOTOR
-								_handled_motor_failure_bitmask = effective_failure_mask;
-								PX4_WARN("Removing motor from allocation (0x%x)", _handled_motor_failure_bitmask);
+								// Typhoon H480 hex: stop the motor that is clockwise to the failed motor.
+								// Ring (CW): 4(FR,CCW)->0(R,CW)->3(BR,CCW)->5(BL,CW)->1(L,CCW)->2(FL,CW)
+								// Clockwise predecessor of each: 0<-4, 1<-5, 2<-1, 3<-0, 4<-2, 5<-3.
+								// Each adjacent pair is opposite-spin, so remaining 4 motors = 2CW+2CCW.
+								static const int kAdjacentPartner[6] = {4, 5, 1, 0, 2, 3};
+								const int opposite_idx = (failed_idx < 6) ? kAdjacentPartner[failed_idx] : failed_idx ^ 1;
+								_handled_motor_failure_bitmask = effective_failure_mask | (1u << opposite_idx);
+								PX4_WARN("Motor %d failed: stopping adjacent motor %d for 4-motor quad config (0x%x)",
+									 failed_idx, opposite_idx, _handled_motor_failure_bitmask);
 								set_gz_ec_min(0);
 							}
 
